@@ -152,28 +152,7 @@ Dtype* const bottom_diff,const Dtype* const weight, const int depth_multiplier_)
 				}
 			}
 		}
-		bottom_diff[index] = error;
-		/*
-		Dtype gradient = 0;
-		Dtype gradient2 = 0;
-		Dtype sum_gradient = 0;
-
-		const Dtype* const top_diff_slice =	top_diff + (n * (in_channels * depth_multiplier_) + c) * conved_height * conved_width;		
-		const Dtype* const weight_slice = weight + c * kernel_h * kernel_w;
-		const Dtype* const top_diff_slice2 = top_diff + (n * (in_channels * depth_multiplier_) + c + in_channels) * conved_height * conved_width;	
-		const Dtype* const weight_slice2 = weight + (c + in_channels) * kernel_h * kernel_w;
-				
-		for (int ph = phstart; ph < phend; ++ph) {
-			for (int pw = pwstart; pw < pwend; ++pw) {
-				int kh=khstart-(ph-phstart)*stride_h;
-				int kw=kwstart-(pw-pwstart)*stride_w;
-				gradient += top_diff_slice[ph * conved_width + pw] * weight_slice[kh * kernel_w + kw];				
-				gradient2 += top_diff_slice2[ph * conved_width + pw] * weight_slice2[kh * kernel_w + kw];
-			}
-		}
-		sum_gradient = gradient + gradient2;
-		bottom_diff[index] = sum_gradient;
-		*/
+		bottom_diff[index] = error;		
 	}
 }
 

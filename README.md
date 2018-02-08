@@ -30,7 +30,7 @@ Please refer to the example/Withdw_MN_train_128_1_train.prototxt, which is alter
 [^nocudnn]: When turn on cudnn, the memory consuming of mobilenet would increase to unbelievable level. You may try.
 
 ### 2018/02/08 Updated
-1. Add the funtion of depth_mutiplier(e.g. Now you can set the input channel = 32, group = 32, output channel = 64. 
+1. Add the funtion of depth_mutiplier(e.g. Now you can set the input channel = 32, group = 32 and output channel = 64. 
    It mean the depth_mutiplier = 2)
 
 ### Transfer normal net to mobilenet

@@ -15,7 +15,7 @@
 
 
 /*
- * The depthwise layer for mobilenet. depth_mutiplier = out_channels / in_channels. depth_mutiplier can only be an integer. 
+ * The depthwise layer for mobilenet. depth_multiplier = out_channels / in_channels. depth_multiplier can only be an integer. 
  */
 
 namespace caffe {
@@ -26,14 +26,14 @@ __global__ void ConvForward(const int nthreads,
 	const int in_height, const int in_width,const int conved_height,
 	const int conved_width, const int kernel_h, const int kernel_w,
 	const int stride_h, const int stride_w, const int pad_h, const int pad_w,
-	Dtype* const top_data, const Dtype* const weight, const Dtype* const bias, const bool bias_term_, const int depth_mutiplier_) {
+	Dtype* const top_data, const Dtype* const weight, const Dtype* const bias, const bool bias_term_, const int depth_multiplier_) {
 
 	CUDA_KERNEL_LOOP(index, nthreads) {//index is from 0 to nthread - 1, parallel execute. nthread is output's count.
 
 		const int pw = index % conved_width;// 该线程对应的top blob（N,C,H,W）中的w,输出Feature Map的中的高的坐标
 		const int ph = (index / conved_width) % conved_height;// 该线程对应的top blob（N,C,H,W）中的h,输出Feature Map的中的宽的坐标
-		const int c = (index / conved_width / conved_height) % (in_channels * depth_mutiplier_);// 该线程对应的top blob（N,C,H,W）中的C,即第c个Channel(number of feature maps)
-		const int n = index / conved_width / conved_height / (in_channels * depth_mutiplier_);// 该线程对应的top blob（N,C,H,W）中的N,即n个样本个数
+		const int c = (index / conved_width / conved_height) % (in_channels * depth_multiplier_);// 该线程对应的top blob（N,C,H,W）中的C,即第c个Channel(number of feature maps)
+		const int n = index / conved_width / conved_height / (in_channels * depth_multiplier_);// 该线程对应的top blob（N,C,H,W）中的N,即n个样本个数
 
         // hstart,wstart,hend,wend分别为bottom blob（上一层feature map）中的点的坐标范围
    	    // 由这些点计算出该线程对应的点（top blob中的点）
@@ -98,20 +98,20 @@ void DepthwiseConvolutionLayer<Dtype>::Forward_gpu(
 
 		const bool bias_term_ = this->bias_term_;
 
-        const int depth_mutiplier_ = out_channels / in_channels_;
+        const int depth_multiplier_ = out_channels / in_channels_;
 
 		if (bias_term_) {
 			const Dtype* const bias = this->blobs_[1]->gpu_data();
 			ConvForward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
 					count, bottom_data, bottom[i]->num(), in_channels_,
 					in_height_, in_width_,conved_height,conved_width,kernel_h_,
-					kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_, top_data, weight, bias, bias_term_, depth_mutiplier_);
+					kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_, top_data, weight, bias, bias_term_, depth_multiplier_);
 		} 
 		else {
 			ConvForward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
 					count, bottom_data, bottom[i]->num(), in_channels_,
 					in_height_, in_width_,conved_height,conved_width,kernel_h_,
-					kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_, top_data, weight, 0, bias_term_, depth_mutiplier_);
+					kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_, top_data, weight, 0, bias_term_, depth_multiplier_);
 		}
 	}
 }
@@ -123,7 +123,7 @@ const int num, const int in_channels, const int height,
 const int width, const int conved_height, const int conved_width,
 const int kernel_h, const int kernel_w, const int stride_h,
 const int stride_w, const int pad_h, const int pad_w,
-Dtype* const bottom_diff,const Dtype* const weight, const int depth_mutiplier_) {
+Dtype* const bottom_diff,const Dtype* const weight, const int depth_multiplier_) {
 
 	CUDA_KERNEL_LOOP(index, nthreads) { // index is from 0 to nthread-1, parallel execute. nthread = count_buttom
 		const int w = index % width + pad_w;
@@ -145,14 +145,35 @@ Dtype* const bottom_diff,const Dtype* const weight, const int depth_mutiplier_) 
 			for (int pw = pwstart; pw < pwend; ++pw) {
 				int kh = khstart - (ph-phstart) * stride_h;
 				int kw = kwstart - (pw-pwstart) * stride_w;
-				for(int i = 0; i < depth_mutiplier_; i++){
-					const Dtype* const top_diff_slice = top_diff + (n * (in_channels * depth_mutiplier_) + c + in_channels * i) * conved_height * conved_width;		
+				for(int i = 0; i < depth_multiplier_; i++){
+					const Dtype* const top_diff_slice = top_diff + (n * (in_channels * depth_multiplier_) + c + in_channels * i) * conved_height * conved_width;		
 					const Dtype* const weight_slice = weight + (c + in_channels * i) * kernel_h * kernel_w;	
 					error += top_diff_slice[ph * conved_width + pw] * weight_slice[kh * kernel_w + kw];									
 				}
 			}
 		}
-		bottom_diff[index] = error;		
+		bottom_diff[index] = error;
+		/*
+		Dtype gradient = 0;
+		Dtype gradient2 = 0;
+		Dtype sum_gradient = 0;
+
+		const Dtype* const top_diff_slice =	top_diff + (n * (in_channels * depth_multiplier_) + c) * conved_height * conved_width;		
+		const Dtype* const weight_slice = weight + c * kernel_h * kernel_w;
+		const Dtype* const top_diff_slice2 = top_diff + (n * (in_channels * depth_multiplier_) + c + in_channels) * conved_height * conved_width;	
+		const Dtype* const weight_slice2 = weight + (c + in_channels) * kernel_h * kernel_w;
+				
+		for (int ph = phstart; ph < phend; ++ph) {
+			for (int pw = pwstart; pw < pwend; ++pw) {
+				int kh=khstart-(ph-phstart)*stride_h;
+				int kw=kwstart-(pw-pwstart)*stride_w;
+				gradient += top_diff_slice[ph * conved_width + pw] * weight_slice[kh * kernel_w + kw];				
+				gradient2 += top_diff_slice2[ph * conved_width + pw] * weight_slice2[kh * kernel_w + kw];
+			}
+		}
+		sum_gradient = gradient + gradient2;
+		bottom_diff[index] = sum_gradient;
+		*/
 	}
 }
 
@@ -181,7 +202,7 @@ const int num, const int out_channels, const int in_height,
 const int in_width, const int conved_height, const int conved_width,
 const int kernel_h, const int kernel_w, const int stride_h,
 const int stride_w, const int pad_h, const int pad_w,
-Dtype* const weight_diff, const Dtype* const bottom_data, const int depth_mutiplier_) {
+Dtype* const weight_diff, const Dtype* const bottom_data, const int depth_multiplier_) {
 
 	CUDA_KERNEL_LOOP(index, nthreads) { //nthread = count_weight
 		const int kw = index % kernel_w;
@@ -192,7 +213,7 @@ Dtype* const weight_diff, const Dtype* const bottom_data, const int depth_mutipl
 		for(int n=0;n<num;n++) {
 			
 			const Dtype* const top_diff_slice = top_diff + (n * out_channels + c) * conved_height * conved_width;
-			const Dtype* const bottom_data_slice = bottom_data + (n * (out_channels/depth_mutiplier_) + (c % (out_channels/depth_mutiplier_))) * in_height * in_width;
+			const Dtype* const bottom_data_slice = bottom_data + (n * (out_channels/depth_multiplier_) + (c % (out_channels/depth_multiplier_))) * in_height * in_width;
 					
 			const int phstart = max(DIVIDE_CEIL((pad_h-kh),stride_h),0);
 			const int phend = min(DIVIDE_CEIL((in_height+pad_h-kh),stride_h),conved_height);		
@@ -275,7 +296,7 @@ const vector<Blob<Dtype>*>& bottom) {
 		vector<int> out_shape_ = top[i]->shape();
 		const int out_channels_ = out_shape_[1];
 
-		const int depth_mutiplier_ = out_channels_ / in_channels_;
+		const int depth_multiplier_ = out_channels_ / in_channels_;
 
 		// Bias gradient, if necessary.
 		if (bias_term_ && bias_propagate_down_) {
@@ -292,7 +313,7 @@ const vector<Blob<Dtype>*>& bottom) {
 				count_weight, top_diff, bottom[i]->num(), out_channels_,
 				in_height_, in_width_, conved_height, conved_weight, kernel_h_,
 				kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_,
-				weight_diff, bottom_data, depth_mutiplier_);
+				weight_diff, bottom_data, depth_multiplier_);
 		}
 		// gradient w.r.t. bottom data, if necessary.
 		if (propagate_down[i]) {
@@ -301,7 +322,7 @@ const vector<Blob<Dtype>*>& bottom) {
 				count_bottom, top_diff, bottom[i]->num(), in_channels_,
 				in_height_, in_width_, conved_height, conved_weight, kernel_h_,
 				kernel_w_, stride_h_, stride_w_, pad_h_, pad_w_, 
-				bottom_diff, weight, depth_mutiplier_);
+				bottom_diff, weight, depth_multiplier_);
 		}
 	}
 }
